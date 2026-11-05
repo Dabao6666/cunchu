@@ -15,7 +15,7 @@ jobs:
   decompile:
     runs-on: windows-latest
     steps:
-      - name: Download and verify Elden Rim Base archive
+      - name: Download and verify exact Elden Rim Base archive
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
@@ -25,23 +25,35 @@ jobs:
             throw "Archive SHA256 mismatch: $hash"
           }
 
-      - name: Extract only PEX files from the target archive
+      - name: Extract plugin records and enumerate package members
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
           $sevenZip = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
           if (!(Test-Path $sevenZip)) { throw "7-Zip executable not found on runner" }
+          $pluginDir = Join-Path $env:RUNNER_TEMP "package-plugins"
+          New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
+          & $sevenZip e $archive -r "-o$pluginDir" -y "*.esp"
+          if ($LASTEXITCODE -ne 0) { throw "ESP extraction failed" }
+          $plugins = @(Get-ChildItem -Path $pluginDir -Filter "*.esp" -File -Recurse)
+          $plugins | Select-Object Name, Length | Format-Table -AutoSize
+          $target = $plugins | Where-Object { $_.Name -ieq "EldenSkyrim.esp" } | Select-Object -First 1
+          if ($null -eq $target) { throw "EldenSkyrim.esp not found in this archive" }
+          "ELDEN_PLUGIN_PATH=$($target.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $sevenZip l $archive -slt | Out-File -FilePath (Join-Path $env:RUNNER_TEMP "archive-members.txt") -Encoding utf8
+
+      - name: Extract only PEX files from the target archive
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
+          $sevenZip = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
           $source = Join-Path $env:RUNNER_TEMP "package-pex"
           New-Item -ItemType Directory -Force -Path $source | Out-Null
           & $sevenZip e $archive -r "-o$source" -y "*.pex"
           if ($LASTEXITCODE -ne 0) { throw "7-Zip PEX extraction failed" }
           $pexFiles = @(Get-ChildItem -Path $source -Filter "*.pex" -File -Recurse)
           "Extracted PEX count: $($pexFiles.Count)"
-          $pexFiles | Select-Object FullName, Length | Format-Table -AutoSize
-          if ($pexFiles.Count -eq 0) {
-            & $sevenZip l $archive -slt | Select-String -Pattern "\.pex($|\s)" | ForEach-Object { Write-Host $_.Line }
-            throw "No PEX files found in archive"
-          }
+          if ($pexFiles.Count -eq 0) { throw "No PEX files found in archive" }
 
       - name: Download Champollion decompiler
         shell: pwsh
@@ -69,7 +81,16 @@ jobs:
           $pscFiles = @(Get-ChildItem -Path $output -Filter "*.psc" -File -Recurse)
           if ($pscFiles.Count -eq 0) { throw "Champollion produced no PSC files" }
           "Decompiled $($pscFiles.Count) package scripts."
-          $pscFiles | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: Upload extracted EldenSkyrim plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: elden-rim-base-EldenSkyrim-esp
+          path: |
+            ${{ runner.temp }}\package-plugins\EldenSkyrim.esp
+            ${{ runner.temp }}\archive-members.txt
+          retention-days: 1
+          compression-level: 0
 
       - name: Upload decompiled package scripts
         uses: actions/upload-artifact@v4
