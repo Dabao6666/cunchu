@@ -21,7 +21,9 @@ jobs:
           base64 -d analysis/scsi731-load.zip.b64 > selected.zip
           mkdir -p input psc asm
           unzip -q selected.zip -d input
-          ./champollion-src/build/Champollion/Champollion input -p psc -a asm -e
+          find input -type f -name '*.pex' -print0 | while IFS= read -r -d '' f; do
+            ./champollion-src/build/Champollion/Champollion "$f" -p psc -a asm -e
+          done
           zip -qr scsi731-load-decompiled.zip psc asm
       - uses: actions/upload-artifact@v4
         with:
