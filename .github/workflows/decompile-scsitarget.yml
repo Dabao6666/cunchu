@@ -2,7 +2,7 @@ name: Decompile selected SCSI 10.731 Papyrus scripts
 on:
   push:
     paths:
-      - 'analysis/scsi731-selected.zip.b64'
+      - 'analysis/scsi731-alpha.pex.b64'
       - '.github/workflows/decompile-scsitarget.yml'
 jobs:
   decompile:
@@ -14,14 +14,13 @@ jobs:
           curl -L --fail -o champollion.zip https://github.com/0xra0/Champollion/releases/download/v1.3.2/ChampollionGUI-v1.3.2-linux-x86_64.zip
           unzip -q champollion.zip -d champollion
           chmod +x champollion/Champollion
-      - name: Decode selected PEX files
+      - name: Decode and decompile
         run: |
-          base64 -d analysis/scsi731-selected.zip.b64 > selected.zip
-          mkdir -p input psc asm
-          unzip -q selected.zip -d input
-          ./champollion/Champollion input -p psc -a asm -r -t -e
-          zip -qr scsi731-selected-decompiled.zip psc asm
+          base64 -d analysis/scsi731-alpha.pex.b64 > SCSI_AddAlphaFX_ShadowWalk.pex
+          mkdir -p psc asm
+          ./champollion/Champollion SCSI_AddAlphaFX_ShadowWalk.pex -p psc -a asm -e
+          zip -qr scsi731-alpha-decompiled.zip psc asm
       - uses: actions/upload-artifact@v4
         with:
-          name: scsi731-selected-decompiled
-          path: scsi731-selected-decompiled.zip
+          name: scsi731-alpha-decompiled
+          path: scsi731-alpha-decompiled.zip
