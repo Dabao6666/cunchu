@@ -1,0 +1,35 @@
+name: Transfer Elden Rim Archive
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/transfer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Release Asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer
+          curl --fail --location --retry 3 \
+            "https://github.com/Dabao6666/cunchu/releases/download/v1.0.0/0-Elden.Rim-Base.3.7.5.7z" \
+            --output "transfer/0-Elden.Rim-Base.3.7.5.7z"
+          echo "cf701c6c559f24ef2eba4cbb765de588d92b6cae908e2d37aa67a351e090b1ba  transfer/0-Elden.Rim-Base.3.7.5.7z" | sha256sum --check
+          test "$(stat -c%s transfer/0-Elden.Rim-Base.3.7.5.7z)" -eq 39848831
+
+      - name: Upload Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: elden-rim-base-archive
+          path: transfer/0-Elden.Rim-Base.3.7.5.7z
+          retention-days: 1
+          compression-level: 0
