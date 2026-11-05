@@ -1,0 +1,49 @@
+name: Inspect Elden Rim Base Rebreath OAR Config
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/inspect-rebreath-oar.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: windows-latest
+    steps:
+      - name: Download and verify exact Elden Rim Base archive
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
+          Invoke-WebRequest -Uri "https://github.com/Dabao6666/cunchu/releases/download/v1.0.0/0-Elden.Rim-Base.3.7.5.7z" -OutFile $archive
+          $hash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne "cf701c6c559f24ef2eba4cbb765de588d92b6cae908e2d37aa67a351e090b1ba") {
+            throw "Archive SHA256 mismatch: $hash"
+          }
+
+      - name: Extract exact Rebreath OAR configuration
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
+          $sevenZip = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
+          $out = Join-Path $env:RUNNER_TEMP "oar-config"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $target = "meshes\actors\character\animations\OpenAnimationReplacer\WarAsh\000WarAshRegainSkill\config.json"
+          & $sevenZip e $archive $target "-o$out" -y
+          if ($LASTEXITCODE -ne 0) { throw "OAR config extraction failed" }
+          $config = Get-ChildItem $out -Filter "config.json" -File -Recurse | Select-Object -First 1
+          if ($null -eq $config) { throw "config.json not extracted" }
+          Get-Content $config.FullName -Raw
+          $config.FullName | Out-File -FilePath (Join-Path $out "extracted-path.txt") -Encoding utf8
+
+      - name: Upload exact Rebreath OAR config
+        uses: actions/upload-artifact@v4
+        with:
+          name: elden-rim-base-rebreath-oar-config
+          path: ${{ runner.temp }}\oar-config\**
+          retention-days: 1
+          compression-level: 6
