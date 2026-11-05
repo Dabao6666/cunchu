@@ -25,20 +25,23 @@ jobs:
             throw "Archive SHA256 mismatch: $hash"
           }
 
-      - name: Extract package archive
+      - name: Extract only PEX files from the target archive
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
           $sevenZip = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
           if (!(Test-Path $sevenZip)) { throw "7-Zip executable not found on runner" }
-          $source = Join-Path $env:RUNNER_TEMP "elden-rim-source"
+          $source = Join-Path $env:RUNNER_TEMP "package-pex"
           New-Item -ItemType Directory -Force -Path $source | Out-Null
-          & $sevenZip x $archive -o$source -y
-          if ($LASTEXITCODE -ne 0) { throw "7-Zip extraction failed" }
-          $pexFiles = @(Get-ChildItem $source -Filter "*.pex" -Recurse)
-          if ($pexFiles.Count -eq 0) { throw "No PEX files found inside the target archive" }
-          "Found $($pexFiles.Count) PEX files in the target archive."
+          & $sevenZip e $archive -r "-o$source" -y "*.pex"
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip PEX extraction failed" }
+          $pexFiles = @(Get-ChildItem -Path $source -Filter "*.pex" -File -Recurse)
+          "Extracted PEX count: $($pexFiles.Count)"
           $pexFiles | Select-Object FullName, Length | Format-Table -AutoSize
+          if ($pexFiles.Count -eq 0) {
+            & $sevenZip l $archive -slt | Select-String -Pattern "\.pex($|\s)" | ForEach-Object { Write-Host $_.Line }
+            throw "No PEX files found in archive"
+          }
 
       - name: Download Champollion decompiler
         shell: pwsh
@@ -54,16 +57,16 @@ jobs:
       - name: Decompile only PEX files from the target archive
         shell: pwsh
         run: |
-          $source = Join-Path $env:RUNNER_TEMP "elden-rim-source"
+          $source = Join-Path $env:RUNNER_TEMP "package-pex"
           $output = Join-Path $env:RUNNER_TEMP "decompiled"
           $assembly = Join-Path $env:RUNNER_TEMP "assembly"
           New-Item -ItemType Directory -Force -Path $output, $assembly | Out-Null
-          $pexFiles = @(Get-ChildItem $source -Filter "*.pex" -Recurse)
+          $pexFiles = @(Get-ChildItem -Path $source -Filter "*.pex" -File -Recurse)
           foreach ($pex in $pexFiles) {
             & $env:CHAMPOLLION_PATH $pex.FullName -p $output -a $assembly -c
             if ($LASTEXITCODE -ne 0) { throw "Champollion failed on $($pex.Name) with exit code $LASTEXITCODE" }
           }
-          $pscFiles = @(Get-ChildItem $output -Filter "*.psc" -Recurse)
+          $pscFiles = @(Get-ChildItem -Path $output -Filter "*.psc" -File -Recurse)
           if ($pscFiles.Count -eq 0) { throw "Champollion produced no PSC files" }
           "Decompiled $($pscFiles.Count) package scripts."
           $pscFiles | Select-Object Name, Length | Format-Table -AutoSize
