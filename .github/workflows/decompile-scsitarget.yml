@@ -9,16 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download Champollion
+      - name: Build Champollion CLI
         run: |
-          curl -L --fail -o champollion.zip https://github.com/0xra0/Champollion/releases/download/v1.3.2/ChampollionGUI-v1.3.2-linux-x86_64.zip
-          unzip -q champollion.zip -d champollion
-          chmod +x champollion/Champollion
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-program-options-dev libfmt-dev
+          git clone --depth 1 https://github.com/0xra0/Champollion.git champollion-src
+          cmake -S champollion-src -B champollion-src/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build champollion-src/build -j2
       - name: Decode and decompile
         run: |
           base64 -d analysis/scsi731-alpha.pex.b64 > SCSI_AddAlphaFX_ShadowWalk.pex
           mkdir -p psc asm
-          ./champollion/Champollion SCSI_AddAlphaFX_ShadowWalk.pex -p psc -a asm -e
+          find champollion-src/build -type f -name Champollion -print
+          ./champollion-src/build/Champollion/Champollion SCSI_AddAlphaFX_ShadowWalk.pex -p psc -a asm -e
           zip -qr scsi731-alpha-decompiled.zip psc asm
       - uses: actions/upload-artifact@v4
         with:
