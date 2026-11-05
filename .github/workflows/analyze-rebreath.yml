@@ -25,7 +25,7 @@ jobs:
             throw "Archive SHA256 mismatch: $hash"
           }
 
-      - name: Extract only scripts from the archive
+      - name: Extract package archive
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
@@ -33,11 +33,12 @@ jobs:
           if (!(Test-Path $sevenZip)) { throw "7-Zip executable not found on runner" }
           $source = Join-Path $env:RUNNER_TEMP "elden-rim-source"
           New-Item -ItemType Directory -Force -Path $source | Out-Null
-          & $sevenZip x $archive "scripts\*.pex" -o$source -y
+          & $sevenZip x $archive -o$source -y
           if ($LASTEXITCODE -ne 0) { throw "7-Zip extraction failed" }
-          $scripts = Join-Path $source "scripts"
-          if (!(Test-Path $scripts)) { throw "No scripts directory extracted" }
-          Get-ChildItem $scripts -Filter "*.pex" | Select-Object Name, Length | Format-Table -AutoSize
+          $pexFiles = @(Get-ChildItem $source -Filter "*.pex" -Recurse)
+          if ($pexFiles.Count -eq 0) { throw "No PEX files found inside the target archive" }
+          "Found $($pexFiles.Count) PEX files in the target archive."
+          $pexFiles | Select-Object FullName, Length | Format-Table -AutoSize
 
       - name: Download Champollion decompiler
         shell: pwsh
@@ -50,17 +51,22 @@ jobs:
           if ($null -eq $tool) { throw "Champollion.exe was not found in release archive" }
           "CHAMPOLLION_PATH=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Decompile package scripts to PSC and assembly
+      - name: Decompile only PEX files from the target archive
         shell: pwsh
         run: |
-          $source = Join-Path $env:RUNNER_TEMP "elden-rim-source\scripts"
+          $source = Join-Path $env:RUNNER_TEMP "elden-rim-source"
           $output = Join-Path $env:RUNNER_TEMP "decompiled"
           $assembly = Join-Path $env:RUNNER_TEMP "assembly"
           New-Item -ItemType Directory -Force -Path $output, $assembly | Out-Null
-          & $env:CHAMPOLLION_PATH $source -p $output -a $assembly -c
-          if ($LASTEXITCODE -ne 0) { throw "Champollion failed with exit code $LASTEXITCODE" }
-          Get-ChildItem $output -Filter "*.psc" | Select-Object Name, Length | Format-Table -AutoSize
-          Get-ChildItem $assembly -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize
+          $pexFiles = @(Get-ChildItem $source -Filter "*.pex" -Recurse)
+          foreach ($pex in $pexFiles) {
+            & $env:CHAMPOLLION_PATH $pex.FullName -p $output -a $assembly -c
+            if ($LASTEXITCODE -ne 0) { throw "Champollion failed on $($pex.Name) with exit code $LASTEXITCODE" }
+          }
+          $pscFiles = @(Get-ChildItem $output -Filter "*.psc" -Recurse)
+          if ($pscFiles.Count -eq 0) { throw "Champollion produced no PSC files" }
+          "Decompiled $($pscFiles.Count) package scripts."
+          $pscFiles | Select-Object Name, Length | Format-Table -AutoSize
 
       - name: Upload decompiled package scripts
         uses: actions/upload-artifact@v4
