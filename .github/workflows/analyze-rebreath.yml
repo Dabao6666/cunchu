@@ -1,0 +1,73 @@
+name: Analyze Rebreath Scripts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/analyze-rebreath.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decompile:
+    runs-on: windows-latest
+    steps:
+      - name: Download and verify Elden Rim Base archive
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
+          Invoke-WebRequest -Uri "https://github.com/Dabao6666/cunchu/releases/download/v1.0.0/0-Elden.Rim-Base.3.7.5.7z" -OutFile $archive
+          $hash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne "cf701c6c559f24ef2eba4cbb765de588d92b6cae908e2d37aa67a351e090b1ba") {
+            throw "Archive SHA256 mismatch: $hash"
+          }
+
+      - name: Extract only scripts from the archive
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "elden-rim-base.7z"
+          $sevenZip = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
+          if (!(Test-Path $sevenZip)) { throw "7-Zip executable not found on runner" }
+          $source = Join-Path $env:RUNNER_TEMP "elden-rim-source"
+          New-Item -ItemType Directory -Force -Path $source | Out-Null
+          & $sevenZip x $archive "scripts\*.pex" -o$source -y
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip extraction failed" }
+          $scripts = Join-Path $source "scripts"
+          if (!(Test-Path $scripts)) { throw "No scripts directory extracted" }
+          Get-ChildItem $scripts -Filter "*.pex" | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: Download Champollion decompiler
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "champollion.zip"
+          Invoke-WebRequest -Uri "https://github.com/Orvid/Champollion/releases/download/v1.3.2/Champollion.v1.3.2.zip" -OutFile $zip
+          $toolDir = Join-Path $env:RUNNER_TEMP "champollion"
+          Expand-Archive -Path $zip -DestinationPath $toolDir -Force
+          $tool = Get-ChildItem $toolDir -Filter "Champollion.exe" -Recurse | Select-Object -First 1
+          if ($null -eq $tool) { throw "Champollion.exe was not found in release archive" }
+          "CHAMPOLLION_PATH=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Decompile package scripts to PSC and assembly
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:RUNNER_TEMP "elden-rim-source\scripts"
+          $output = Join-Path $env:RUNNER_TEMP "decompiled"
+          $assembly = Join-Path $env:RUNNER_TEMP "assembly"
+          New-Item -ItemType Directory -Force -Path $output, $assembly | Out-Null
+          & $env:CHAMPOLLION_PATH $source -p $output -a $assembly -c
+          if ($LASTEXITCODE -ne 0) { throw "Champollion failed with exit code $LASTEXITCODE" }
+          Get-ChildItem $output -Filter "*.psc" | Select-Object Name, Length | Format-Table -AutoSize
+          Get-ChildItem $assembly -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Upload decompiled package scripts
+        uses: actions/upload-artifact@v4
+        with:
+          name: elden-rim-base-rebreath-analysis
+          path: |
+            ${{ runner.temp }}\decompiled\**
+            ${{ runner.temp }}\assembly\**
+          retention-days: 1
+          compression-level: 6
