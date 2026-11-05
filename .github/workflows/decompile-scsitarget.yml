@@ -1,8 +1,8 @@
-name: Decompile SCSI 10.731 actor scripts
+name: Decompile SCSI MCM scripts
 on:
   push:
     paths:
-      - 'analysis/scsi731-actor.zip.b64'
+      - 'analysis/scsi731-mcm.zip.b64'
       - '.github/workflows/decompile-scsitarget.yml'
 jobs:
   decompile:
@@ -18,14 +18,14 @@ jobs:
           cmake --build champollion-src/build -j2
       - name: Decode and decompile
         run: |
-          base64 -d analysis/scsi731-actor.zip.b64 > selected.zip
+          base64 -d analysis/scsi731-mcm.zip.b64 > selected.zip
           mkdir -p input psc asm
           unzip -q selected.zip -d input
           find input -type f -name '*.pex' -print0 | while IFS= read -r -d '' f; do
             ./champollion-src/build/Champollion/Champollion "$f" -p psc -a asm -e
           done
-          zip -qr scsi731-actor-decompiled.zip psc asm
+          zip -qr scsi731-mcm-decompiled.zip psc asm
       - uses: actions/upload-artifact@v4
         with:
-          name: scsi731-actor-decompiled
-          path: scsi731-actor-decompiled.zip
+          name: scsi731-mcm-decompiled
+          path: scsi731-mcm-decompiled.zip
